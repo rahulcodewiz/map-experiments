@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mcp_experiments"
+version = "0.1.0"
+description = "mcp_experiments"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.10.1",
+    "starlette>=0.27.0",
+    "uvicorn[standard]>=0.24.0",
+    "httpx>=0.25.0",
+    "websockets>=11.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-asyncio>=0.21.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+mcp-experiments = "main:main"
+
+[tool.setuptools.package-dir]
+"" = "src"

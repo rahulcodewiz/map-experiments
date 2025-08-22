@@ -1,0 +1,281 @@
+Metadata-Version: 2.4
+Name: mcp_experiments
+Version: 0.1.0
+Summary: mcp_experiments
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: mcp>=1.10.1
+Requires-Dist: starlette>=0.27.0
+Requires-Dist: uvicorn[standard]>=0.24.0
+Requires-Dist: httpx>=0.25.0
+Requires-Dist: websockets>=11.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.0.0; extra == "dev"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "dev"
+
+# Hello World FastMCP with Request Tracing
+
+A complete example demonstrating end-to-end request tracing in FastMCP using Python's `contextvars` and structured logging.
+
+## 🌟 Features
+
+- **Automatic Request Tracing**: Every request gets a unique ID that flows through all operations
+- **Session Correlation**: Multiple requests from the same client are correlated via session IDs
+- **Async Context Propagation**: Trace context automatically propagates across all async operations
+- **Structured Logging**: Enhanced logs with request and session information
+- **Multiple Transport Support**: Works with HTTP, SSE, and MCP protocol communications
+- **Production Ready**: Configurable logging levels and error handling
+
+## 🚀 Quick Start
+
+### 1. Install Dependencies
+
+```bash
+cd ~/git/mcp_examples/hello_world_tracing
+pip install -r requirements.txt
+```
+
+### 2. Run the Server
+
+```bash
+python src/main.py
+```
+
+The server will start on `http://localhost:8080`
+
+### 3. Test the Endpoints
+
+**Homepage with trace info:**
+```bash
+curl http://localhost:8080/
+```
+
+**Health check:**
+```bash
+curl http://localhost:8080/health
+```
+
+**Async operations demo:**
+```bash
+curl http://localhost:8080/demo-async
+```
+
+**Ping with trace headers:**
+```bash
+curl -H "X-Session-ID: my-session-123" http://localhost:8080/ping
+```
+
+## 📊 Understanding the Logs
+
+When you make requests, you'll see logs like this:
+
+```
+2024-01-15 10:30:45 - src.main - INFO - [req=a1b2c3d4|session=550e8400] - Request started: GET /
+2024-01-15 10:30:45 - src.main - INFO - [req=a1b2c3d4|session=550e8400] - Homepage accessed
+2024-01-15 10:30:45 - src.tracing_middleware - INFO - [req=a1b2c3d4|session=550e8400] - Request completed: 200 in 12.3ms
+```
+
+**Key elements:**
+- `req=a1b2c3d4` - Unique request ID
+- `session=550e8400` - Session ID (shared across requests from same client)
+- All log lines for the same request have the same IDs
+
+## 🔧 MCP Tools Demo
+
+The server includes several MCP tools to demonstrate tracing:
+
+### 1. Hello Tool
+```bash
+# Using MCP client or SSE
+{
+  "method": "tools/call",
+  "params": {
+    "name": "hello",
+    "arguments": {"name": "World"}
+  }
+}
+```
+
+### 2. Add Numbers Tool
+```bash
+{
+  "method": "tools/call", 
+  "params": {
+    "name": "add_numbers",
+    "arguments": {"a": 10, "b": 5}
+  }
+}
+```
+
+### 3. Slow Operation (Multi-step async)
+```bash
+{
+  "method": "tools/call",
+  "params": {
+    "name": "slow_operation", 
+    "arguments": {"steps": 5}
+  }
+}
+```
+
+### 4. Parallel Tasks (Concurrent async)
+```bash
+{
+  "method": "tools/call",
+  "params": {
+    "name": "parallel_tasks",
+    "arguments": {"task_count": 4}
+  }
+}
+```
+
+## 🧠 Key Concepts Demonstrated
+
+### 1. ContextVars Magic
+```python
+# In your handler:
+async def my_handler():
+    # No need to pass request_id around!
+    logger.info("This log automatically includes request ID")
+    await some_async_function()
+
+async def some_async_function():
+    # This function automatically inherits the trace context
+    logger.info("This also has the same request ID!")
+```
+
+### 2. Automatic Propagation
+```python
+# Spawn async tasks - they inherit context automatically
+tasks = [
+    asyncio.create_task(worker_1()),
+    asyncio.create_task(worker_2()),
+    asyncio.create_task(worker_3()),
+]
+results = await asyncio.gather(*tasks)
+# All workers log with the same request ID!
+```
+
+### 3. Flexible Session Management
+The middleware extracts session IDs from:
+- `X-Session-ID` header
+- `X-Correlation-ID` header  
+- `session_id` query parameter
+- Authorization Bearer token
+- Generates new session ID if none found
+
+### 4. Enhanced Error Handling
+```python
+try:
+    result = await risky_operation()
+except Exception as e:
+    # Error logs automatically include trace context
+    logger.error(f"Operation failed: {e}", exc_info=True)
+    # Client gets error with request ID for support
+    raise ValueError(f"Operation failed (req: {get_request_id()})")
+```
+
+## ⚙️ Configuration
+
+### Environment Variables
+
+```bash
+# Logging level
+export LOG_LEVEL=DEBUG
+
+# Server port  
+export PORT=8080
+
+# Enable different log components
+export VERBOSE_MCP=true
+export ENABLE_REQUEST_TRACING=true
+```
+
+### Custom Session Headers
+
+```python
+# In your code, customize header names:
+middleware = RequestTracingMiddleware(
+    session_header="X-Custom-Session-ID",
+    correlation_header="X-Custom-Correlation-ID"
+)
+```
+
+## 📁 Project Structure
+
+```
+hello_world_tracing/
+├── src/
+│   ├── request_context.py      # ContextVars implementation
+│   ├── logging_config.py       # Enhanced logging with tracing
+│   ├── tracing_middleware.py   # HTTP and MCP tracing middleware
+│   ├── hello_mcp_server.py     # MCP server with demo tools
+│   └── main.py                 # Main ASGI application
+├── requirements.txt            # Dependencies
+└── README.md                  # This file
+```
+
+## 🧪 Testing Concurrent Requests
+
+To see isolated contexts in action:
+
+```bash
+# Terminal 1
+curl http://localhost:8080/demo-async &
+
+# Terminal 2  
+curl http://localhost:8080/demo-async &
+
+# Terminal 3
+curl http://localhost:8080/demo-async &
+
+# Check logs - each request has different IDs but operations within 
+# each request share the same trace context!
+```
+
+## 🎯 Production Considerations
+
+1. **Performance**: ContextVars have minimal overhead
+2. **Memory**: Context variables are automatically cleaned up
+3. **Security**: Sensitive data should be sanitized in logs
+4. **Monitoring**: Structured logs work great with log aggregation tools
+5. **Debugging**: Request IDs can be included in error responses for support
+
+## 🔍 Advanced Usage
+
+### Custom Context Variables
+```python
+# Add your own context variables
+user_id_var = contextvars.ContextVar("user_id")
+operation_var = contextvars.ContextVar("operation_name")
+
+# Set in middleware or handlers
+user_id_var.set("user-123")
+operation_var.set("data-processing")
+
+# Access anywhere in the call stack
+current_user = user_id_var.get()
+current_operation = operation_var.get()
+```
+
+### Correlation Across Services
+```python
+# Forward trace headers to external services
+headers = {
+    "X-Request-ID": get_request_id(),
+    "X-Session-ID": get_session_id()
+}
+response = await http_client.post(url, headers=headers)
+```
+
+## 💡 Tips
+
+1. **Use session IDs** to correlate multiple requests from the same client/user
+2. **Include request IDs in error responses** to help with support and debugging  
+3. **Set appropriate log levels** in production (INFO or WARNING)
+4. **Use structured logging** for better log aggregation and searching
+5. **Test with concurrent requests** to verify context isolation
+
+---
+
+🎉 **Happy tracing!** This example shows how powerful contextvars can be for building observable, debuggable FastMCP applications.
